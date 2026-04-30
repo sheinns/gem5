@@ -1,40 +1,36 @@
-/*
- * LVP Verification Test
- * 
- * Phase 1: Train the LVP by loading the same constant value 300 times
- *          from the same address (same PC in the loop).
- * Phase 2: Change the value and load again — should trigger a
- *          misprediction squash since the LVP predicts the old value.
- */
 #include <stdio.h>
+#include <stdlib.h>
 
-volatile int target = 42;
+#define ITERS 10000
 
-int main() {
-    int sum = 0;
+int arr[100];
 
-    /* Phase 1: Training — 300 loads of constant value 42 */
-    printf("Phase 1: Training LVP with 300 constant loads...\n");
-    for (int i = 0; i < 300; i++) {
-        sum += target;  /* Same PC, same value → LCT counter climbs to 255 */
+int main(int argc, char **argv) {
+    printf("Initializing array for pointer-chasing...\n");
+    // Array where index 42 points back to 42
+    arr[42] = 42;
+    
+    // We start chasing at index 42
+    int val = 42;
+    // prevent compiler optimization
+    if (argc > 1) val = atoi(argv[1]);
+
+    printf("Starting 100,000 dependent loads...\n");
+    
+    // Unroll to minimize loop overhead and focus on load latency
+    for (int i = 0; i < ITERS; i++) {
+        val = arr[val];
+        val = arr[val];
+        val = arr[val];
+        val = arr[val];
+        val = arr[val];
+        val = arr[val];
+        val = arr[val];
+        val = arr[val];
+        val = arr[val];
+        val = arr[val];
     }
-
-    printf("Training done. sum=%d (expect 12600)\n", sum);
-
-    /* Phase 2: Change value → next load should be mispredicted */
-    target = 99;
-    printf("Phase 2: Value changed to 99. Loading...\n");
-
-    int val = target;  /* LVP predicts 42, actual is 99 → SQUASH */
-    printf("Loaded: %d (expect 99)\n", val);
-
-    /* Phase 3: Retrain with new value */
-    printf("Phase 3: Retraining with 300 loads of value 99...\n");
-    sum = 0;
-    for (int i = 0; i < 300; i++) {
-        sum += target;
-    }
-    printf("Retrain done. sum=%d (expect 29700)\n", sum);
-
+    
+    printf("Done. val=%d (expect 42)\n", val);
     return 0;
 }
