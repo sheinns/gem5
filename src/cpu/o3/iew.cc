@@ -1024,8 +1024,11 @@ IEW::dispatchInsts(ThreadID tid)
             // ---- LVP: Predict load value at dispatch ----
             if (cpu->lvp && cpu->lvp->isEnabled()) {
                 Addr instPC = inst->pcState().instAddr();
-                // Use effSize if available, else default to 8
-                unsigned loadSize = inst->effSize ? inst->effSize : 8;
+                // effSize is 0 at dispatch (set during execute).
+                // Pass 0 to skip the size-based eligibility check
+                // at prediction time; it will be enforced at
+                // verification time when effSize is known.
+                unsigned loadSize = 0;
 
                 auto result = cpu->lvp->predictLoad(
                     tid, instPC, loadSize);
@@ -1056,13 +1059,6 @@ IEW::dispatchInsts(ThreadID tid)
                                 destReg->className());
                         }
                     }
-                } else if (result.classification !=
-                           lvp::LVPClassification::
-                               StrongUnpredictable) {
-                    // Record classification even if not
-                    // forwarding (for stats / training)
-                    inst->setLVPPrediction(
-                        result.classification, 0);
                 }
             }
             // ---- End LVP ----

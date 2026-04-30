@@ -71,6 +71,12 @@ class LoadValuePredictionUnit : public SimObject
                           LVPClassification prediction);
 
     /**
+     * Train the LVP for a load that was not predicted.
+     * Looks up the last value in LVPT to determine if the value has changed.
+     */
+    void trainLoad(ThreadID tid, Addr instPC, RegVal actualVal);
+
+    /**
      * Notify the CVU of a store's effective address.
      */
     void processStoreAddress(ThreadID tid, Addr storeAddr);

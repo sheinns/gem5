@@ -48,7 +48,9 @@ LoadValuePredictionUnit::isEligible(unsigned loadSize, RegVal value) const
 {
     // Per FLOP paper §4.2: 8-byte loads are only predicted if
     // the value is zero.  Loads ≤4 bytes are always eligible.
-    if (loadSize <= 4)
+    // loadSize==0 means size is unknown (dispatch time); allow it
+    // and defer the check to verification.
+    if (loadSize == 0 || loadSize <= 4)
         return true;
     if (loadSize == 8 && value == 0)
         return true;
@@ -142,6 +144,38 @@ LoadValuePredictionUnit::verifyPrediction(ThreadID tid, Addr instPC,
     }
 
     return correct;
+}
+
+void
+LoadValuePredictionUnit::trainLoad(ThreadID tid, Addr instPC, RegVal actualVal)
+{
+    if (!enabled)
+        return;
+
+    bool lvptValid = false;
+    RegVal prevVal = lvpt->lookup(tid, instPC, &lvptValid);
+
+    bool correct = false;
+    if (lvptValid && prevVal == actualVal) {
+        correct = true;
+    }
+
+    // Always update LVPT with actual value
+    lvpt->update(instPC, actualVal, tid);
+
+    // Update LCT based on whether value matches previous
+    lct->update(tid, instPC, LVPClassification::StrongUnpredictable, correct);
+
+    if (correct) {
+        DPRINTF(LVP, "trainLoad: PC %#x CORRECT (val %#x)\n",
+                instPC, actualVal);
+        ++stats.numCorrect;
+    } else {
+        DPRINTF(LVP, "trainLoad: PC %#x MISMATCH "
+                "(prev %#x, actual %#x)\n",
+                instPC, prevVal, actualVal);
+        ++stats.numMispredictions;
+    }
 }
 
 void

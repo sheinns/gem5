@@ -1193,8 +1193,23 @@ LSQUnit::writeback(const DynInstPtr &inst, PacketPtr pkt)
         RegVal predictedVal = inst->lvpPredictedVal();
         lvp::LVPClassification cls = inst->lvpClassification();
 
+        // Deferred 8-byte guard: at dispatch, effSize was unknown.
+        // Now enforce the FLOP rule: 8-byte loads only predict zero.
+        bool sizeIneligible = (inst->effSize == 8 &&
+                               predictedVal != 0);
+
+        if (sizeIneligible) {
+            DPRINTF(LVP, "[tid:%d] LVP deferred 8-byte guard: "
+                    "PC %#x [sn:%llu] effSize=8, val=%#x "
+                    "→ forced squash\n",
+                    tid, instPC, inst->seqNum, predictedVal);
+            // Force a mismatch so verifyPrediction resets the LCT
+            predictedVal = ~actualVal;
+        }
+
         bool correct = cpu->lvp->verifyPrediction(
-            tid, instPC, loadAddr, actualVal, predictedVal, cls);
+            tid, instPC, loadAddr, actualVal,
+            predictedVal, cls);
 
         if (!correct) {
             DPRINTF(LVP, "[tid:%d] LVP MISMATCH: PC %#x "
@@ -1224,7 +1239,6 @@ LSQUnit::writeback(const DynInstPtr &inst, PacketPtr pkt)
 
         ThreadID tid = inst->threadNumber;
         Addr instPC = inst->pcState().instAddr();
-        Addr loadAddr = inst->effAddr;
 
         // Read actual value
         RegVal actualVal = 0;
@@ -1235,11 +1249,9 @@ LSQUnit::writeback(const DynInstPtr &inst, PacketPtr pkt)
             }
         }
 
-        // verifyPrediction with matching prediction = correct
-        // This trains the LCT counter upward
-        cpu->lvp->verifyPrediction(
-            tid, instPC, loadAddr, actualVal, actualVal,
-            lvp::LVPClassification::StrongUnpredictable);
+        // Use trainLoad to check against previously stored value
+        // and update LCT counter appropriately
+        cpu->lvp->trainLoad(tid, instPC, actualVal);
     }
     // ---- End LVP ----
 
