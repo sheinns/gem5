@@ -240,16 +240,16 @@ class IEW
         ldstQueue.setLastRetiredHtmUid(tid, htmUid);
     }
 
+    /** Sends commit proper information for a squash due to a memory order
+     * violation. Public so that LSQUnit can trigger LVP misprediction squashes.
+     */
+    void squashDueToMemOrder(const DynInstPtr &inst, ThreadID tid);
+
   private:
     /** Sends commit proper information for a squash due to a branch
      * mispredict.
      */
     void squashDueToBranch(const DynInstPtr &inst, ThreadID tid);
-
-    /** Sends commit proper information for a squash due to a memory order
-     * violation.
-     */
-    void squashDueToMemOrder(const DynInstPtr &inst, ThreadID tid);
 
     /** Sets Dispatch to blocked, and signals back to other stages to block. */
     void block(ThreadID tid);

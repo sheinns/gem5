@@ -70,6 +70,7 @@
 #include "cpu/o3/thread_state.hh"
 #include "cpu/simple_thread.hh"
 #include "cpu/timebuf.hh"
+#include "cpu/lvp/load_value_prediction_unit.hh"
 #include "params/BaseO3CPU.hh"
 #include "sim/process.hh"
 
@@ -463,6 +464,9 @@ class CPU : public BaseCPU
     std::vector<BaseISA *> isa;
 
   public:
+    /** Load Value Predictor (FLOP-paper model). */
+    lvp::LoadValuePredictionUnit *lvp;
+
     /** Enum to give each stage a specific index, so when calling
      *  activateStage() or deactivateStage(), they can specify which stage
      *  is being activated/deactivated.

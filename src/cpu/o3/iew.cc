@@ -55,6 +55,7 @@
 #include "debug/Activity.hh"
 #include "debug/Drain.hh"
 #include "debug/IEW.hh"
+#include "debug/LVP.hh"
 #include "params/BaseO3CPU.hh"
 
 namespace gem5
@@ -1019,6 +1020,52 @@ IEW::dispatchInsts(ThreadID tid)
             add_to_iq = true;
 
             toRename->iewInfo[tid].dispatchedToLQ++;
+
+            // ---- LVP: Predict load value at dispatch ----
+            if (cpu->lvp && cpu->lvp->isEnabled()) {
+                Addr instPC = inst->pcState().instAddr();
+                // Use effSize if available, else default to 8
+                unsigned loadSize = inst->effSize ? inst->effSize : 8;
+
+                auto result = cpu->lvp->predictLoad(
+                    tid, instPC, loadSize);
+
+                if (result.valid &&
+                    result.classification ==
+                        lvp::LVPClassification::Constant) {
+                    // Store prediction in the instruction
+                    inst->setLVPPrediction(
+                        result.classification,
+                        result.predictedValue);
+
+                    // Forward predicted value to dest register
+                    if (inst->numDestRegs() > 0) {
+                        PhysRegIdPtr destReg =
+                            inst->renamedDestIdx(0);
+                        if (destReg &&
+                            !destReg->is(InvalidRegClass)) {
+                            cpu->setReg(destReg,
+                                result.predictedValue, tid);
+                            scoreboard->setReg(destReg);
+
+                            DPRINTF(LVP, "[tid:%d] LVP dispatch: "
+                                "PC %#x [sn:%llu] forwarding "
+                                "predicted val %#x to %s\n",
+                                tid, instPC, inst->seqNum,
+                                result.predictedValue,
+                                destReg->className());
+                        }
+                    }
+                } else if (result.classification !=
+                           lvp::LVPClassification::
+                               StrongUnpredictable) {
+                    // Record classification even if not
+                    // forwarding (for stats / training)
+                    inst->setLVPPrediction(
+                        result.classification, 0);
+                }
+            }
+            // ---- End LVP ----
         } else if (inst->isStore()) {
             DPRINTF(IEW, "[tid:%i] Issue: Memory instruction "
                     "encountered, adding to LSQ.\n", tid);

@@ -137,6 +137,9 @@ CPU::CPU(const BaseO3CPUParams &params)
         checker = NULL;
     }
 
+    // Initialize the Load Value Predictor (FLOP-paper model)
+    lvp = params.loadValuePredictor;
+
     if (!FullSystem) {
         thread.resize(numThreads);
         tids.resize(numThreads);

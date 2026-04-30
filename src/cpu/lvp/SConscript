@@ -1,0 +1,23 @@
+# -*- mode:python -*-
+
+Import('*')
+
+if env['CONF']['BUILD_ISA']:
+    SimObject('LoadValuePredictionUnit.py', sim_objects=[
+        'LoadClassificationTable',
+        'LoadValuePredictionTable',
+        'ConstantVerificationUnit',
+        'LoadValuePredictionUnit',
+    ])
+
+    Source('load_classification_table.cc')
+    Source('load_value_prediction_table.cc')
+    Source('constant_verification_unit.cc')
+    Source('load_value_prediction_unit.cc')
+
+    DebugFlag('LCT')
+    DebugFlag('LVPT')
+    DebugFlag('CVU')
+    DebugFlag('LVP')
+
+    CompoundFlag('LVPAll', ['LCT', 'LVPT', 'CVU', 'LVP'])

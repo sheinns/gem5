@@ -51,6 +51,7 @@
 #include "debug/HtmCpu.hh"
 #include "debug/IEW.hh"
 #include "debug/LSQUnit.hh"
+#include "debug/LVP.hh"
 #include "mem/packet.hh"
 #include "mem/request.hh"
 
@@ -732,6 +733,20 @@ LSQUnit::executeStore(const DynInstPtr &store_inst)
         ++storesToWB;
     }
 
+    // ---- LVP: Notify CVU of store address for invalidation ----
+    if (cpu->lvp && cpu->lvp->isEnabled() &&
+        store_inst->effAddrValid()) {
+        DPRINTF(LVP, "[tid:%d] Store addr %#x notified to CVU "
+                "[sn:%llu]\n",
+                store_inst->threadNumber,
+                store_inst->effAddr,
+                store_inst->seqNum);
+        cpu->lvp->processStoreAddress(
+            store_inst->threadNumber,
+            store_inst->effAddr);
+    }
+    // ---- End LVP ----
+
     return checkViolations(loadIt, store_inst);
 
 }
@@ -1153,6 +1168,80 @@ LSQUnit::writeback(const DynInstPtr &inst, PacketPtr pkt)
     iewStage->instToCommit(inst);
 
     iewStage->activityThisCycle();
+
+    // ---- LVP: Verify prediction at load writeback ----
+    if (inst->isLoad() && inst->lvpPredicted() &&
+        !inst->lvpIsVerified() && inst->fault == NoFault &&
+        cpu->lvp && cpu->lvp->isEnabled()) {
+
+        inst->lvpSetVerified();
+
+        ThreadID tid = inst->threadNumber;
+        Addr instPC = inst->pcState().instAddr();
+        Addr loadAddr = inst->effAddr;
+
+        // Read the actual value from the physical register
+        // (completeAcc has already written it)
+        RegVal actualVal = 0;
+        if (inst->numDestRegs() > 0) {
+            PhysRegIdPtr destReg = inst->renamedDestIdx(0);
+            if (destReg && !destReg->is(InvalidRegClass)) {
+                actualVal = cpu->getReg(destReg, tid);
+            }
+        }
+
+        RegVal predictedVal = inst->lvpPredictedVal();
+        lvp::LVPClassification cls = inst->lvpClassification();
+
+        bool correct = cpu->lvp->verifyPrediction(
+            tid, instPC, loadAddr, actualVal, predictedVal, cls);
+
+        if (!correct) {
+            DPRINTF(LVP, "[tid:%d] LVP MISMATCH: PC %#x "
+                    "[sn:%llu] predicted=%#x actual=%#x → SQUASH\n",
+                    tid, instPC, inst->seqNum,
+                    predictedVal, actualVal);
+
+            // Trigger pipeline squash — same mechanism as
+            // memory ordering violations
+            iewStage->squashDueToMemOrder(inst, tid);
+        } else {
+            DPRINTF(LVP, "[tid:%d] LVP CORRECT: PC %#x "
+                    "[sn:%llu] val=%#x\n",
+                    tid, instPC, inst->seqNum, actualVal);
+
+            // Track in CVU for store-invalidation monitoring
+            unsigned lvptIdx = cpu->lvp->getLVPTIndex(instPC, tid);
+            cpu->lvp->processConstLoadAddress(
+                tid, instPC, loadAddr, lvptIdx);
+        }
+    }
+
+    // Also update the LVPT for non-predicted loads (training)
+    if (inst->isLoad() && !inst->lvpPredicted() &&
+        inst->fault == NoFault &&
+        cpu->lvp && cpu->lvp->isEnabled()) {
+
+        ThreadID tid = inst->threadNumber;
+        Addr instPC = inst->pcState().instAddr();
+        Addr loadAddr = inst->effAddr;
+
+        // Read actual value
+        RegVal actualVal = 0;
+        if (inst->numDestRegs() > 0) {
+            PhysRegIdPtr destReg = inst->renamedDestIdx(0);
+            if (destReg && !destReg->is(InvalidRegClass)) {
+                actualVal = cpu->getReg(destReg, tid);
+            }
+        }
+
+        // verifyPrediction with matching prediction = correct
+        // This trains the LCT counter upward
+        cpu->lvp->verifyPrediction(
+            tid, instPC, loadAddr, actualVal, actualVal,
+            lvp::LVPClassification::StrongUnpredictable);
+    }
+    // ---- End LVP ----
 
     // see if this load changed the PC
     iewStage->checkMisprediction(inst);

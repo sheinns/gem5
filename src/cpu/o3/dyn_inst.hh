@@ -62,6 +62,7 @@
 #include "cpu/reg_class.hh"
 #include "cpu/static_inst.hh"
 #include "cpu/translation.hh"
+#include "cpu/lvp/lvp_enums.hh"
 #include "debug/HtmCpu.hh"
 
 namespace gem5
@@ -216,6 +217,17 @@ class DynInst : public ExecContext, public RefCounted
      * the instruction is out of its speculative state.
      */
     std::vector<short> _destMiscRegIdx;
+
+    /////////////////////// LVP State //////////////////////
+    /** LVP classification for this load instruction. */
+    lvp::LVPClassification _lvpClassification =
+        lvp::LVPClassification::StrongUnpredictable;
+    /** Predicted value from the LVP. */
+    RegVal _lvpPredictedVal = 0;
+    /** Whether the LVP made a prediction for this instruction. */
+    bool _lvpPredicted = false;
+    /** Whether the LVP prediction has been verified. */
+    bool _lvpVerified = false;
 
     size_t _numSrcs;
     size_t _numDests;
@@ -1204,6 +1216,41 @@ class DynInst : public ExecContext, public RefCounted
         cpu->setReg(reg, val, threadNumber);
         setResult(reg->regClass(), val);
     }
+
+    /////////////////////// LVP Interface //////////////////////
+    /** Set the LVP prediction result. */
+    void
+    setLVPPrediction(lvp::LVPClassification cls, RegVal val)
+    {
+        _lvpClassification = cls;
+        _lvpPredictedVal = val;
+        _lvpPredicted = true;
+    }
+
+    /** Whether the LVP predicted a value for this load. */
+    bool lvpPredicted() const { return _lvpPredicted; }
+
+    /** Get the LVP classification. */
+    lvp::LVPClassification lvpClassification() const
+    {
+        return _lvpClassification;
+    }
+
+    /** Get the LVP predicted value. */
+    RegVal lvpPredictedVal() const { return _lvpPredictedVal; }
+
+    /** Whether the LVP classified this as Constant. */
+    bool
+    lvpIsConstant() const
+    {
+        return _lvpClassification == lvp::LVPClassification::Constant;
+    }
+
+    /** Mark the LVP prediction as verified. */
+    void lvpSetVerified() { _lvpVerified = true; }
+
+    /** Whether the LVP prediction has been verified. */
+    bool lvpIsVerified() const { return _lvpVerified; }
 };
 
 } // namespace o3
