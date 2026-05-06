@@ -1,7 +1,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 
-#define ITERS 10000
+#define ITERS 100000
 
 int arr[100];
 

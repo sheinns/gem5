@@ -111,8 +111,10 @@ class LoadValuePredictionUnit : public SimObject
         statistics::Scalar totalLoads;
         statistics::Scalar numPredictions;
         statistics::Scalar numConstLoads;
-        statistics::Scalar numCorrect;
-        statistics::Scalar numMispredictions;
+        statistics::Scalar numPredictionCorrect;
+        statistics::Scalar numPredictionIncorrect;
+        statistics::Scalar numTrainCorrect;
+        statistics::Scalar numTrainIncorrect;
         statistics::Scalar num8ByteZeroPredictions;
         statistics::Scalar numSuppressed;
     } stats;

@@ -32,10 +32,14 @@ LoadValuePredictionUnit::LVPStats::LVPStats(LoadValuePredictionUnit *lvpu)
                "Loads where a prediction was made"),
       ADD_STAT(numConstLoads, statistics::units::Count::get(),
                "Loads classified as constant"),
-      ADD_STAT(numCorrect, statistics::units::Count::get(),
-               "Correct LVP predictions"),
-      ADD_STAT(numMispredictions, statistics::units::Count::get(),
-               "LVP mispredictions (squash required)"),
+      ADD_STAT(numPredictionCorrect, statistics::units::Count::get(),
+               "Correct speculative LVP predictions"),
+      ADD_STAT(numPredictionIncorrect, statistics::units::Count::get(),
+               "Incorrect speculative LVP predictions (squash required)"),
+      ADD_STAT(numTrainCorrect, statistics::units::Count::get(),
+               "Unpredicted loads matching LVPT (training hits)"),
+      ADD_STAT(numTrainIncorrect, statistics::units::Count::get(),
+               "Unpredicted loads mismatching LVPT (training misses)"),
       ADD_STAT(num8ByteZeroPredictions, statistics::units::Count::get(),
                "8-byte loads where zero was predicted"),
       ADD_STAT(numSuppressed, statistics::units::Count::get(),
@@ -135,12 +139,12 @@ LoadValuePredictionUnit::verifyPrediction(ThreadID tid, Addr instPC,
     if (correct) {
         DPRINTF(LVP, "verifyPrediction: PC %#x CORRECT (val %#x)\n",
                 instPC, correctVal);
-        ++stats.numCorrect;
+        ++stats.numPredictionCorrect;
     } else {
         DPRINTF(LVP, "verifyPrediction: PC %#x MISMATCH "
                 "(predicted %#x, actual %#x)\n",
                 instPC, predictedVal, correctVal);
-        ++stats.numMispredictions;
+        ++stats.numPredictionIncorrect;
     }
 
     return correct;
@@ -169,12 +173,12 @@ LoadValuePredictionUnit::trainLoad(ThreadID tid, Addr instPC, RegVal actualVal)
     if (correct) {
         DPRINTF(LVP, "trainLoad: PC %#x CORRECT (val %#x)\n",
                 instPC, actualVal);
-        ++stats.numCorrect;
+        ++stats.numTrainCorrect;
     } else {
         DPRINTF(LVP, "trainLoad: PC %#x MISMATCH "
                 "(prev %#x, actual %#x)\n",
                 instPC, prevVal, actualVal);
-        ++stats.numMispredictions;
+        ++stats.numTrainIncorrect;
     }
 }
 
