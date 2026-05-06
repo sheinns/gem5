@@ -1528,7 +1528,13 @@ InstructionQueue::addToProducers(const DynInstPtr &new_inst)
         dependGraph.setInst(dest_reg->flatIndex(), new_inst);
 
         // Mark the scoreboard to say it's not yet ready.
-        regScoreboard[dest_reg->flatIndex()] = false;
+        // LVP: If this is a speculatively predicted load, the value
+        // is already available, so we mark it as ready.
+        if (new_inst->lvpPredicted()) {
+            regScoreboard[dest_reg->flatIndex()] = true;
+        } else {
+            regScoreboard[dest_reg->flatIndex()] = false;
+        }
     }
 }
 
