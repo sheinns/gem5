@@ -8,8 +8,6 @@
  * -> setReg/scoreboard), the probe[val*64] access warms L1 before the
  * mismatch squash, and frRecv() times the probe lines to recover it.
  *
- * Runs under gem5 with --param="system.cpu.simulateScheme=..." to show
- * the leak (UnsafeBaseline) vs its suppression (safe schemes).
  */
 
 #include <stdint.h>
