@@ -453,6 +453,21 @@ ROB::updateTail()
 void
 ROB::squash(InstSeqNum squash_num, ThreadID tid)
 {
+    // ---- SpaceSpec: discard shadow lines owned by squashed instructions --
+    //
+    // squash_num is already the exclusive bound of what survives.  Commit
+    // decrements it by one when the squashing instruction itself is included
+    // (see Commit::tick and IEW::squashDueToMemOrder, which sets
+    // includeSquashInst for a memory-order violation or an LVP mismatch), so
+    // doSquash()'s strict '>' here removes exactly the instructions the
+    // pipeline is discarding - including the violating load itself.  Hooking
+    // here rather than at each squash source means branch mispredictions,
+    // LVP mismatches, memory-order violations, traps and TC squashes are all
+    // covered by a single place.
+    if (cpu->shadowCache) {
+        cpu->shadowCache->squash(squash_num, tid);
+    }
+
     if (isEmpty(tid)) {
         DPRINTF(ROB, "Does not need to squash due to being empty "
                 "[sn:%llu]\n",

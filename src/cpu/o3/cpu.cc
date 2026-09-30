@@ -144,6 +144,14 @@ CPU::CPU(const BaseO3CPUParams &params)
     // Remains nullptr when the param is unset — all later code guards
     // with "if (shadowCache)" so the baseline O3 CPU is unaffected.
     shadowCache = params.shadow_cache;
+    if (shadowCache) {
+        // Each hardware thread gets an independent partition of the shadow,
+        // so the CPU is what tells the shadow how many there are.  Doing it
+        // here rather than through a SimObject param is deliberate: a Python
+        // default cannot see CPU::numThreads, so a param could silently
+        // disagree with the CPU and index the partitions out of bounds.
+        shadowCache->setNumThreads(numThreads);
+    }
 
     if (!FullSystem) {
         thread.resize(numThreads);

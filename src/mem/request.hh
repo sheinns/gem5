@@ -466,6 +466,22 @@ class Request : public Extensible<Request>
     /** Sequence number of the instruction that creates the request */
     InstSeqNum _reqInstSeqNum = 0;
 
+    /**
+     * SpaceSpec: this read miss must be filled into the CPU's shadow cache
+     * instead of being installed in a real (private L1-D) cache.
+     *
+     * Set by the pipeline at dispatch/send time.  It rides along on the
+     * Request because a Request is the one piece of state that is shared by
+     * the CPU-side packet, the MSHR packet that is forwarded downstream, and
+     * the fill packet that eventually comes back up.  The owning sequence
+     * number travels in _reqInstSeqNum (see setReqInstSeqNum) and the owning
+     * thread travels in _contextId (see contextId).
+     *
+     * This is a SpaceSpec extension and is always false in a configuration
+     * with no shadow cache, so it never perturbs baseline gem5 behaviour.
+     */
+    bool _shadowFill = false;
+
     /** A pointer to an atomic operation */
     AtomicOpFunctorPtr atomicOpFunctor = nullptr;
 
@@ -524,6 +540,7 @@ class Request : public Extensible<Request>
           _taskId(other._taskId), _vaddr(other._vaddr),
           _extraData(other._extraData), _contextId(other._contextId),
           _pc(other._pc), _reqInstSeqNum(other._reqInstSeqNum),
+          _shadowFill(other._shadowFill),
           _localAccessor(other._localAccessor),
           translateDelta(other.translateDelta),
           accessDelta(other.accessDelta), depth(other.depth)
@@ -533,6 +550,30 @@ class Request : public Extensible<Request>
     }
 
     ~Request() {}
+
+    ////////////////// SpaceSpec shadow-fill support //////////////////
+
+    /**
+     * Mark this request as a SpaceSpec speculative fill.
+     *
+     * The ROB sequence number of the owning instruction must already have
+     * been recorded with setReqInstSeqNum() and the thread with setContext()
+     * so that the receiving cache can attribute the shadow entry.
+     */
+    void
+    setShadowFill()
+    {
+        _shadowFill = true;
+    }
+
+    /** True if this fill must be diverted to the CPU's shadow cache. */
+    bool
+    isShadowFill() const
+    {
+        return _shadowFill;
+    }
+
+    ////////////////// End SpaceSpec shadow-fill support //////////////////
 
     /**
      * Factory method for creating memory management requests, with

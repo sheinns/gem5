@@ -43,7 +43,8 @@ SimObject('Cache.py', sim_objects=[
     'WriteAllocator', 'BaseCache', 'Cache', 'NoncoherentCache'],
     enums=['Clusivity'])
 
-SimObject('ShadowCache.py', sim_objects=['ShadowCache'])
+SimObject('ShadowCache.py', sim_objects=['ShadowCache'],
+          enums=['SpeculationPolicy'])
 
 Source('base.cc')
 Source('cache.cc')

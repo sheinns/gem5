@@ -48,6 +48,7 @@
 
 #include <cassert>
 #include <cstdint>
+#include <cstring>
 #include <string>
 
 #include "base/addr_range.hh"
@@ -93,6 +94,7 @@ class Base;
 class MSHR;
 class MSHRQueue;
 class RequestPort;
+class ShadowCache;
 class QueueEntry;
 class WriteQueueEntry;
 struct BaseCacheParams;
@@ -364,6 +366,17 @@ class BaseCache : public ClockedObject
 
     /** Prefetcher */
     prefetch::Base *prefetcher;
+
+    /**
+     * SpaceSpec shadow cache (SafeSpec DAC'19), or nullptr when SpaceSpec
+     * is disabled for this cache.
+     *
+     * Shared with the CPU: the pipeline tags speculative read misses on
+     * the Request, this cache diverts their fills here and serves tag
+     * misses out of here, and Commit promotes lines back into this cache
+     * once the owning load retires.
+     */
+    ShadowCache *shadowCache;
 
     /** To probe when a cache hit occurs */
     ProbePointArg<CacheAccessProbeArg> *ppHit;
@@ -1171,6 +1184,29 @@ class BaseCache : public ClockedObject
     }
 
     const AddrRangeList &getAddrRanges() const { return addrRanges; }
+
+    /**
+     * SpaceSpec: install a line that Commit has promoted out of the shadow
+     * cache, making it resident in this cache at last.
+     *
+     * The data is architecturally dead by the time it gets here - the load
+     * that fetched it speculatively has committed - so the install reuses
+     * exactly the read-fill path (allocateBlock + updateBlockData), which
+     * leaves the block readable and writable but *clean*, just as a fill
+     * from memory would.  Pushing a MemCmd::WritebackClean up from the CPU
+     * would have been the obvious alternative, but BaseCache::access() marks
+     * a writeback dirty, which is wrong for a line nobody has written.
+     *
+     * The install is instantaneous rather than a timed packet.  That is a
+     * modelling simplification, documented in the SpaceSpec header; if a
+     * timing-accurate model is ever wanted, this is the place to turn into a
+     * real command.
+     *
+     * @param lineAddr Block-aligned physical address of the line.
+     * @param data    Exactly blkSize bytes of line contents.
+     * @return true if the line is resident in this cache afterwards.
+     */
+    bool promoteFromShadow(Addr lineAddr, const uint8_t *data);
 
     MSHR *allocateMissBuffer(PacketPtr pkt, Tick time, bool sched_send = true)
     {

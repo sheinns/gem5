@@ -52,6 +52,7 @@
 #include "debug/IEW.hh"
 #include "debug/LSQUnit.hh"
 #include "debug/LVP.hh"
+#include "debug/SpaceSpec.hh"
 #include "mem/packet.hh"
 #include "mem/request.hh"
 
@@ -621,6 +622,32 @@ LSQUnit::executeLoad(const DynInstPtr &inst)
 
     load_fault = inst->initiateAcc();
 
+    // ---- SpaceSpec: tag this load's L1-D request for shadow fill ----
+    //
+    // IEW decided at dispatch whether this load is speculative for cache
+    // purposes.  The decision is stamped onto the Request rather than the
+    // packet because a Request is what survives being forwarded to the next
+    // level and what the fill packet comes back on.  The sequence number and
+    // context ride along too, so the L1-D can attribute the shadow entry to
+    // this instruction and this thread.
+    //
+    // Stamping here (right after initiateAcc) rather than at send time is
+    // safe: the Request is created by initiateAcc and is not re-created if
+    // the access is split or translation-delayed.  A store is never tagged,
+    // which matters because a fill that carries a write target has to be
+    // installed in L1 (see BaseCache::recvTimingResp).
+    if (cpu->shadowCache && inst->shadowFillEligible() &&
+        !inst->shadowFillTagged() && inst->hasRequest() &&
+        inst->savedRequest && !inst->isDataPrefetch()) {
+        inst->savedRequest->setShadowFill(inst->seqNum, inst->threadNumber);
+        inst->setShadowFillTagged();
+        DPRINTF(SpaceSpec,
+                "[tid:%d] tagging shadow fill [sn:%llu] PC %s "
+                "lvpPredicted=%d\n",
+                inst->threadNumber, inst->seqNum, inst->pcState(),
+                inst->lvpPredicted());
+    }
+
     if (load_fault == NoFault && !inst->readMemAccPredicate()) {
         assert(inst->readPredicate());
         inst->setExecuted();
@@ -1164,6 +1191,23 @@ LSQUnit::writeback(const DynInstPtr &inst, PacketPtr pkt)
         }
     }
 
+    // ---- SpaceSpec: note that this load's line is held in the shadow ----
+    //
+    // The fill was diverted by the L1-D (see BaseCache::recvTimingResp) and
+    // is therefore not resident in L1; it will be installed only when this
+    // load commits, or silently dropped if the load is squashed first.
+    //
+    // "Tagged" does not guarantee the entry exists: if the shadow was full
+    // the L1-D drops the fill outright (still no speculative line in L1).
+    // Commit's promotion is therefore written to tolerate a missing entry.
+    if (cpu->shadowCache && inst->isLoad() && inst->shadowFillTagged()) {
+        inst->setInShadowCache();
+        DPRINTF(SpaceSpec,
+                "[tid:%d] load [sn:%llu] requested a shadow-held line "
+                "(not resident in L1-D)\n",
+                inst->threadNumber, inst->seqNum);
+    }
+
     // Need to insert instruction into queue to commit
     iewStage->instToCommit(inst);
 
@@ -1216,6 +1260,33 @@ LSQUnit::writeback(const DynInstPtr &inst, PacketPtr pkt)
                     "[sn:%llu] predicted=%#x actual=%#x → SQUASH\n",
                     tid, instPC, inst->seqNum,
                     predictedVal, actualVal);
+
+            // ---- SpaceSpec: this load's line must leave no trace in L1 ----
+            //
+            // That already happens: the fill was diverted to the shadow,
+            // and the squash below flows through ROB::squash() ->
+            // ShadowCache::squash(), which discards the entry.  Nothing more
+            // is needed here; it is spelled out so the SpaceSpec trace reads
+            // as a single story rather than two unrelated ones.
+            if (inst->inShadowCache()) {
+                DPRINTF(SpaceSpec,
+                        "[tid:%d] LVP mismatch discards the shadow line for "
+                        "[sn:%llu] PC %#x\n", tid, inst->seqNum, instPC);
+            }
+
+            // Roll the destination register back to the architecturally
+            // correct value.  This is belt-and-braces: completeAcc() above
+            // has already written that value into the same renamed physical
+            // register, so the register file is in fact correct.  The
+            // explicit write documents the intent and costs nothing, since
+            // the squash re-executes this instruction either way.
+            if (inst->numDestRegs() > 0) {
+                PhysRegIdPtr destReg = inst->renamedDestIdx(0);
+                if (destReg && !destReg->is(InvalidRegClass) &&
+                    cpu->getReg(destReg, tid) != actualVal) {
+                    cpu->setReg(destReg, actualVal, tid);
+                }
+            }
 
             // Trigger pipeline squash — same mechanism as
             // memory ordering violations

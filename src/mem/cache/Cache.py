@@ -40,6 +40,7 @@ from m5.objects.ClockedObject import ClockedObject
 from m5.objects.Compressors import BaseCacheCompressor
 from m5.objects.Prefetcher import BasePrefetcher
 from m5.objects.ReplacementPolicies import *
+from m5.objects.ShadowCache import ShadowCache
 from m5.objects.Tags import *
 from m5.params import *
 from m5.proxy import *
@@ -162,6 +163,19 @@ class BaseCache(ClockedObject):
     # e.g. a table walker. Additionally, on a hit from an upstream
     # cache a line is dropped for a mostly exclusive cache.
     clusivity = Param.Clusivity("mostly_incl", "Clusivity with upstream cache")
+
+    # SpaceSpec (SafeSpec DAC'19) shadow state for this cache.  When set,
+    # fills for requests the pipeline tagged as speculative are diverted
+    # into the shadow instead of being installed here, and lines are
+    # served out of the shadow on a tag miss.  The line is only installed
+    # when the owning load commits.  Leave NULL (the default) for baseline
+    # behaviour: every code path is guarded and the request flag is never
+    # set, so the cache is bit-for-bit unchanged.
+    shadow_cache = Param.ShadowCache(
+        NULL,
+        "SpaceSpec shadow cache guarding this cache (NULL disables "
+        "SpaceSpec for this cache).",
+    )
 
     # The write allocator enables optimizations for streaming write
     # accesses by first coalescing writes and then avoiding allocation

@@ -231,16 +231,32 @@ class DynInst : public ExecContext, public RefCounted
 
     /////////////////////// SpaceSpec Shadow-Cache State //////////////////////
     /**
+     * Decided at dispatch: should this load's L1-D miss fill be diverted
+     * into the ShadowCache instead of being installed in L1-D?
+     *
+     * IEW sets this according to the ShadowCache's speculation_policy.  The
+     * LSQUnit then stamps the decision onto the Request, and the cache acts
+     * on it when the fill comes back.
+     */
+    bool _shadowFillEligible = false;
+    /**
+     * True once the Request carrying this load has actually been tagged.
+     * Guards against tagging a Request that is reused across a
+     * translation-delayed or split access.
+     */
+    bool _shadowFillTagged = false;
+    /**
      * True when this load's cache-line fill has been captured in the
-     * ShadowCache instead of being written directly to L1-D.  Set by
-     * LSQUnit::completeDataAccess(); cleared never (entry is either
-     * promoted or squashed).
+     * ShadowCache instead of being installed in L1-D.  Recorded at
+     * writeback from the instruction's own state; the entry itself is
+     * released either by promotion at commit or by a squash.
      */
     bool _inShadowCache = false;
     /**
-     * True once Commit has called ShadowCache::promote() for this
-     * instruction.  Prevents a double-promotion if commit is called
-     * more than once (shouldn't happen, but guards defensively).
+     * True once Commit has handed this load's shadow entry to the L1-D for
+     * promotion.  The entry is retired by Commit on its next pass, which is
+     * deliberately later than the promotion so that younger in-flight loads
+     * can still be served from it.
      */
     bool _shadowPromoted = false;
 
@@ -1271,7 +1287,7 @@ class DynInst : public ExecContext, public RefCounted
 
     /**
      * Mark this load as having its cache-line fill captured in the
-     * ShadowCache (called by LSQUnit on speculative fills).
+     * ShadowCache (called by LSQUnit on writeback).
      */
     void setInShadowCache() { _inShadowCache = true; }
 
@@ -1290,6 +1306,17 @@ class DynInst : public ExecContext, public RefCounted
 
     /** True once the shadow entry has been promoted to L1-D at commit. */
     bool shadowPromoted() const { return _shadowPromoted; }
+
+    /**
+     * Whether this load's L1-D miss fill should go to the ShadowCache
+     * instead of L1-D.  Decided by IEW at dispatch.
+     */
+    bool shadowFillEligible() const { return _shadowFillEligible; }
+    void setShadowFillEligible() { _shadowFillEligible = true; }
+
+    /** Whether the Request for this load has already been tagged. */
+    bool shadowFillTagged() const { return _shadowFillTagged; }
+    void setShadowFillTagged() { _shadowFillTagged = true; }
 };
 
 } // namespace o3

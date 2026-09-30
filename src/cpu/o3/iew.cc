@@ -1062,6 +1062,30 @@ IEW::dispatchInsts(ThreadID tid)
                 }
             }
             // ---- End LVP ----
+
+            // ---- SpaceSpec: decide whether this load's L1-D miss fill
+            // goes to the shadow cache instead of L1-D.
+            //
+            // Dispatch is the only point at which both the speculation
+            // policy and the LVP verdict are known, so the decision is made
+            // here (after the LVP block, which is what
+            // "lvp_predicted_only" keys off) and recorded on the
+            // instruction.  The LSQUnit stamps it onto the Request later,
+            // when the request actually goes out to the cache.
+            if (cpu->shadowCache) {
+                switch (cpu->shadowCache->policy()) {
+                  case enums::SpeculationPolicy::all_uncommitted:
+                    inst->setShadowFillEligible();
+                    break;
+                  case enums::SpeculationPolicy::lvp_predicted_only:
+                    if (inst->lvpPredicted())
+                        inst->setShadowFillEligible();
+                    break;
+                  case enums::SpeculationPolicy::disabled:
+                    break;
+                }
+            }
+            // ---- End SpaceSpec ----
         } else if (inst->isStore()) {
             DPRINTF(IEW, "[tid:%i] Issue: Memory instruction "
                     "encountered, adding to LSQ.\n", tid);

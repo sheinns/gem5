@@ -389,6 +389,26 @@ class LSQ
 
         uint32_t taskId() const { return _taskId; }
 
+        /**
+         * SpaceSpec (SafeSpec DAC'19): mark every request this access
+         * comprises as a speculative fill whose line belongs in the shadow
+         * cache.
+         *
+         * All sub-requests are tagged, not just the main one: a split
+         * (unaligned) access spans two cache lines and produces one fill per
+         * line, so tagging only the first would let the second line reach L1
+         * speculatively.  The owning sequence number and thread travel with
+         * the request so that the cache can attribute the shadow entry.
+         */
+        void
+        setShadowFill(InstSeqNum seq_num, ThreadID thread)
+        {
+            for (auto &r : _reqs) {
+                r->setReqInstSeqNum(seq_num);
+                r->setShadowFill();
+            }
+        }
+
         RequestPtr req(int idx = 0) { return _reqs.at(idx); }
         const RequestPtr req(int idx = 0) const { return _reqs.at(idx); }
 

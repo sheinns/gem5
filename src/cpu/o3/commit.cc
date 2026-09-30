@@ -62,6 +62,8 @@
 #include "debug/Drain.hh"
 #include "debug/ExecFaulting.hh"
 #include "debug/HtmCpu.hh"
+#include "debug/SpaceSpec.hh"
+#include "mem/cache/base.hh"
 #include "params/BaseO3CPU.hh"
 #include "sim/faults.hh"
 #include "sim/full_system.hh"
@@ -116,6 +118,7 @@ Commit::Commit(CPU *_cpu, const BaseO3CPUParams &params)
       trapLatency(params.trapLatency),
       canHandleInterrupts(true),
       avoidQuiesceLiveLock(false),
+      pendingShadowRetire(params.numThreads),
       stats(_cpu, this)
 {
     if (commitWidth > MaxWidth)
@@ -909,6 +912,13 @@ Commit::commitInsts()
 
     DPRINTF(Commit, "Trying to commit instructions in the ROB.\n");
 
+    // ---- SpaceSpec: release shadow entries promoted on the previous pass
+    //
+    // Done first so that the entries stay visible for the whole window in
+    // which a younger, already-in-flight load could still need them (see
+    // promoteShadow()).
+    retireShadow();
+
     unsigned num_committed = 0;
 
     DynInstPtr head_inst;
@@ -989,6 +999,14 @@ Commit::commitInsts()
                     ->committedInstType[head_inst->opClass()]++;
                 stats.committedInstType[tid][head_inst->opClass()]++;
                 ppCommit->notify(head_inst);
+
+                // ---- SpaceSpec: WFC promotion
+                //
+                // A load that reached the commit head is architecturally
+                // dead, so the line it fetched speculatively is now allowed
+                // to become resident in L1-D.  Anything younger is still
+                // speculative and stays in the shadow.
+                promoteShadow(head_inst);
 
                 // hardware transactional memory
 
@@ -1104,6 +1122,73 @@ Commit::commitInsts()
 
     if (num_committed == commitWidth) {
         stats.commitEligibleSamples++;
+    }
+}
+
+void
+Commit::promoteShadow(const DynInstPtr &head_inst)
+{
+    if (!cpu->shadowCache || !head_inst->isLoad() ||
+        !head_inst->inShadowCache() || head_inst->shadowPromoted()) {
+        return;
+    }
+
+    const ThreadID tid = head_inst->threadNumber;
+
+    // WFC (wait-for-commit) promotion: the load is at the head of the ROB and
+    // has just committed, so its line is architecturally dead and may finally
+    // become resident in L1-D.
+    auto entry = cpu->shadowCache->promote(head_inst->seqNum, tid);
+    if (!entry.has_value()) {
+        // The line is not in the shadow.  Three benign reasons: the fill was
+        // dropped because the shadow was full, a store invalidated it, or it
+        // was never shadowed in the first place.  None of them is an error.
+        DPRINTF(SpaceSpec,
+                "[tid:%d] nothing to promote for [sn:%llu] (no shadow entry)\n",
+                tid, head_inst->seqNum);
+        return;
+    }
+
+    // Hand the line to the L1-D.  The cache registers itself with the
+    // shadow in BaseCache::init(), so this needs no config plumbing.
+    if (auto *dcache = cpu->shadowCache->cache()) {
+        dcache->promoteFromShadow(entry->tag, entry->data.data());
+    } else {
+        warn_once("Commit: no cache is registered with the shadow cache; the "
+                  "promoted line for [sn:%llu] is dropped",
+                  head_inst->seqNum);
+    }
+
+    head_inst->setShadowPromoted();
+
+    // Retire the entry one commit pass later rather than now.  Packets from
+    // the same request port are seen in order, so the line is guaranteed to
+    // be in L1-D before any load issued after this point; but a younger load
+    // that is *already* in flight would otherwise find the line in neither L1
+    // nor the shadow.  Retiring next pass costs nothing and closes that
+    // window.  Even if it did not, the worst outcome would be one redundant
+    // refetch - never a wrong value, since the line is re-inserted under the
+    // younger load's own sequence number.
+    pendingShadowRetire[tid].push_back(head_inst->seqNum);
+
+    DPRINTF(SpaceSpec,
+            "[tid:%d] promoted [sn:%llu] addr %#x to L1-D\n", tid,
+            head_inst->seqNum, entry->tag);
+}
+
+void
+Commit::retireShadow()
+{
+    if (!cpu->shadowCache) {
+        return;
+    }
+
+    for (ThreadID tid = 0; tid < numThreads; ++tid) {
+        auto &pending = pendingShadowRetire[tid];
+        for (InstSeqNum seq_num : pending) {
+            cpu->shadowCache->retire(seq_num, tid);
+        }
+        pending.clear();
     }
 }
 

@@ -290,6 +290,23 @@ class Commit
      */
     bool commitHead(const DynInstPtr &head_inst, unsigned inst_num);
 
+    /**
+     * SpaceSpec (SafeSpec DAC'19): WFC promotion.
+     *
+     * Called for an instruction that has just committed.  If the load's
+     * cache line is still held in the ShadowCache, hand it to the L1-D so
+     * that it finally becomes resident.  No-op unless SpaceSpec is enabled.
+     */
+    void promoteShadow(const DynInstPtr &head_inst);
+
+    /**
+     * SpaceSpec: drop shadow entries promoted on the previous commit pass.
+     *
+     * Deferred by one pass on purpose - see promoteShadow().  Called once
+     * per commitInsts().
+     */
+    void retireShadow();
+
     /** Gets instructions from rename and inserts them into the ROB. */
     void getInsts();
 
@@ -348,6 +365,13 @@ class Commit
 
     /** Vector of all of the threads. */
     std::vector<ThreadState *> thread;
+
+    /**
+     * SpaceSpec: sequence numbers of shadow entries that were promoted into
+     * L1-D on the previous commit pass and are now safe to drop.  Keyed by
+     * thread, drained at the top of commitInsts().
+     */
+    std::vector<std::vector<InstSeqNum>> pendingShadowRetire;
 
     /** Records that commit has written to the time buffer this cycle. Used for
      * the CPU to determine if it can deschedule itself if there is no activity.
