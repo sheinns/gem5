@@ -43,6 +43,8 @@ SimObject('Cache.py', sim_objects=[
     'WriteAllocator', 'BaseCache', 'Cache', 'NoncoherentCache'],
     enums=['Clusivity'])
 
+SimObject('ShadowCache.py', sim_objects=['ShadowCache'])
+
 Source('base.cc')
 Source('cache.cc')
 Source('cache_blk.cc')
@@ -51,8 +53,10 @@ Source('mshr_queue.cc')
 Source('noncoherent_cache.cc')
 Source('write_queue.cc')
 Source('write_queue_entry.cc')
+Source('shadow_cache.cc')
 
 DebugFlag('Cache')
+DebugFlag('SpaceSpec', 'SpaceSpec shadow cache tracing')
 DebugFlag('CacheComp')
 DebugFlag('CachePort')
 DebugFlag('CacheRepl')

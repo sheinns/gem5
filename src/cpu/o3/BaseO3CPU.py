@@ -47,6 +47,7 @@ from m5.objects.FUPool import *
 from m5.objects.IndexingPolicies import *
 from m5.objects.IQUnit import *
 from m5.objects.LoadValuePredictionUnit import *
+from m5.objects.ShadowCache import *
 from m5.objects.ReplacementPolicies import *
 from m5.objects.SMT import *
 from m5.params import *
@@ -211,6 +212,13 @@ class BaseO3CPU(BaseCPU):
     loadValuePredictor = Param.LoadValuePredictionUnit(
         LoadValuePredictionUnit(),
         "Load Value Predictor (FLOP-paper model)",
+    )
+
+    shadow_cache = Param.ShadowCache(
+        NULL,
+        "SpaceSpec Shadow Cache (SafeSpec DAC'19). "
+        "Set to ShadowCache() to enable; None disables SpaceSpec entirely "
+        "so the baseline O3 CPU is unaffected.",
     )
 
     recvRespThrottling = Param.Bool(

@@ -229,6 +229,21 @@ class DynInst : public ExecContext, public RefCounted
     /** Whether the LVP prediction has been verified. */
     bool _lvpVerified = false;
 
+    /////////////////////// SpaceSpec Shadow-Cache State //////////////////////
+    /**
+     * True when this load's cache-line fill has been captured in the
+     * ShadowCache instead of being written directly to L1-D.  Set by
+     * LSQUnit::completeDataAccess(); cleared never (entry is either
+     * promoted or squashed).
+     */
+    bool _inShadowCache = false;
+    /**
+     * True once Commit has called ShadowCache::promote() for this
+     * instruction.  Prevents a double-promotion if commit is called
+     * more than once (shouldn't happen, but guards defensively).
+     */
+    bool _shadowPromoted = false;
+
     size_t _numSrcs;
     size_t _numDests;
 
@@ -1251,6 +1266,30 @@ class DynInst : public ExecContext, public RefCounted
 
     /** Whether the LVP prediction has been verified. */
     bool lvpIsVerified() const { return _lvpVerified; }
+
+    /////////////////////// SpaceSpec Shadow-Cache Interface //////////////////////
+
+    /**
+     * Mark this load as having its cache-line fill captured in the
+     * ShadowCache (called by LSQUnit on speculative fills).
+     */
+    void setInShadowCache() { _inShadowCache = true; }
+
+    /**
+     * True when the fill for this load is sitting in the ShadowCache
+     * rather than L1-D.  Commit uses this to decide whether to call
+     * ShadowCache::promote().
+     */
+    bool inShadowCache() const { return _inShadowCache; }
+
+    /**
+     * Record that this instruction's shadow entry has been promoted to L1.
+     * Called by Commit after ShadowCache::promote() succeeds.
+     */
+    void setShadowPromoted() { _shadowPromoted = true; }
+
+    /** True once the shadow entry has been promoted to L1-D at commit. */
+    bool shadowPromoted() const { return _shadowPromoted; }
 };
 
 } // namespace o3

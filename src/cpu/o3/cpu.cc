@@ -140,6 +140,11 @@ CPU::CPU(const BaseO3CPUParams &params)
     // Initialize the Load Value Predictor (FLOP-paper model)
     lvp = params.loadValuePredictor;
 
+    // Initialize the SpaceSpec Shadow Cache (SafeSpec DAC'19).
+    // Remains nullptr when the param is unset — all later code guards
+    // with "if (shadowCache)" so the baseline O3 CPU is unaffected.
+    shadowCache = params.shadow_cache;
+
     if (!FullSystem) {
         thread.resize(numThreads);
         tids.resize(numThreads);
